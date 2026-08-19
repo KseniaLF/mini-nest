@@ -45,3 +45,27 @@ test("resolves a recursive dependency graph", () => {
   assert.ok(result.b instanceof B);
   assert.ok(result.b.c instanceof C);
 });
+
+test("returns the same instance for singleton scope", () => {
+  @Injectable()
+  class SingletonService {}
+
+  const container = new Container();
+
+  const first = container.resolve(SingletonService);
+  const second = container.resolve(SingletonService);
+
+  assert.equal(first, second);
+});
+
+test("returns different instances for transient scope", () => {
+  @Injectable({ scope: "transient" })
+  class TransientService {}
+
+  const container = new Container();
+
+  const first = container.resolve(TransientService);
+  const second = container.resolve(TransientService);
+
+  assert.notEqual(first, second);
+});
