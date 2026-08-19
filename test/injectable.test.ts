@@ -11,12 +11,10 @@ test("Injectable marks a class and uses singleton scope by default", () => {
   class Service {}
 
   const injectable = Reflect.getMetadata(INJECTABLE_METADATA, Service);
-  console.log("injectable: ", injectable);
-  assert.ok(injectable);
+  assert.equal(injectable, true);
 
   const scope = Reflect.getMetadata(SCOPE_METADATA, Service);
   const expectedValue = "singleton";
-  console.log("scope: ", scope);
 
   assert.equal(scope, expectedValue);
 });
@@ -27,7 +25,6 @@ test("Injectable stores transient scope", () => {
 
   const scope = Reflect.getMetadata(SCOPE_METADATA, TransientService);
   const expectedValue = "transient";
-  console.log("scope: ", scope);
 
   assert.equal(scope, expectedValue);
 });
