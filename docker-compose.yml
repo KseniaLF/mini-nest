@@ -1,0 +1,6 @@
+services:
+  api:
+    image: mini-nest:part-1-ioc
+    build:
+      context: .
+      target: test
