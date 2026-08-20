@@ -88,3 +88,29 @@ test("resolves a dependency registered under an explicit token", () => {
   const service = container.resolve(Service);
   assert.equal(service.config, config);
 });
+
+test("throws a descriptive error for a circular dependency", () => {
+  @Injectable()
+  class B {
+    constructor(public a: unknown) {}
+  }
+
+  @Injectable()
+  class A {
+    constructor(public b: B) {}
+  }
+  Reflect.defineMetadata("design:paramtypes", [A], B);
+
+  const container = new Container();
+
+  assert.throws(
+    () => container.resolve(A),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error instanceof RangeError, false);
+      assert.match(error.message, /A -> B -> A/);
+
+      return true;
+    },
+  );
+});
