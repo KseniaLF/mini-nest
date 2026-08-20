@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import { Injectable } from "../src/decorators/injectable";
 import { Container } from "../src/container";
+import { Inject } from "../src/decorators/inject";
 
 test("resolves an injectable class without dependencies", () => {
   @Injectable()
@@ -68,4 +69,22 @@ test("returns different instances for transient scope", () => {
   const second = container.resolve(TransientService);
 
   assert.notEqual(first, second);
+});
+
+interface Config {
+  port: number;
+}
+const CONFIG = Symbol.for("CONFIG");
+const config = { port: 3000 };
+
+test("resolves a dependency registered under an explicit token", () => {
+  @Injectable()
+  class Service {
+    constructor(@Inject(CONFIG) public config: Config) {}
+  }
+
+  const container = new Container();
+  container.register(CONFIG, config);
+  const service = container.resolve(Service);
+  assert.equal(service.config, config);
 });
