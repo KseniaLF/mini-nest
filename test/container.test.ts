@@ -1,0 +1,116 @@
+import "reflect-metadata";
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { Injectable } from "../src/decorators/injectable";
+import { Container } from "../src/container";
+import { Inject } from "../src/decorators/inject";
+
+test("resolves an injectable class without dependencies", () => {
+  @Injectable()
+  class Service {}
+
+  const container = new Container();
+  const instance = container.resolve(Service);
+
+  assert.ok(instance instanceof Service);
+});
+
+test("throws for a class without @Injectable", () => {
+  class NotInjectable {}
+
+  const container = new Container();
+
+  assert.throws(() => container.resolve(NotInjectable), /NotInjectable/);
+});
+
+test("resolves a recursive dependency graph", () => {
+  @Injectable()
+  class C {}
+
+  @Injectable()
+  class B {
+    constructor(public c: C) {}
+  }
+
+  @Injectable()
+  class A {
+    constructor(public b: B) {}
+  }
+
+  const container = new Container();
+  const result = container.resolve(A);
+
+  assert.ok(result instanceof A);
+  assert.ok(result.b instanceof B);
+  assert.ok(result.b.c instanceof C);
+});
+
+test("returns the same instance for singleton scope", () => {
+  @Injectable()
+  class SingletonService {}
+
+  const container = new Container();
+
+  const first = container.resolve(SingletonService);
+  const second = container.resolve(SingletonService);
+
+  assert.equal(first, second);
+});
+
+test("returns different instances for transient scope", () => {
+  @Injectable({ scope: "transient" })
+  class TransientService {}
+
+  const container = new Container();
+
+  const first = container.resolve(TransientService);
+  const second = container.resolve(TransientService);
+
+  assert.notEqual(first, second);
+});
+
+interface Config {
+  port: number;
+}
+const CONFIG = Symbol.for("CONFIG");
+const config = { port: 3000 };
+
+test("resolves a dependency registered under an explicit token", () => {
+  @Injectable()
+  class Service {
+    constructor(@Inject(CONFIG) public config: Config) {}
+  }
+
+  const container = new Container();
+  container.register(CONFIG, config);
+  const service = container.resolve(Service);
+  assert.equal(service.config, config);
+});
+
+test("throws a descriptive error for a circular dependency", () => {
+  @Injectable()
+  class B {
+    constructor(public a: unknown) {}
+  }
+
+  @Injectable()
+  class A {
+    constructor(public b: B) {}
+  }
+  Reflect.defineMetadata("design:paramtypes", [A], B);
+
+  const container = new Container();
+
+  assert.throws(
+    () => container.resolve(A),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error instanceof RangeError, false);
+      assert.match(error.message, /A -> B -> A/);
+
+      return true;
+    },
+  );
+});
