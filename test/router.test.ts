@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { Controller } from "../src/decorators/controller";
-import { buildRoutes } from "../src/router";
+import { buildRoutes, matchRoute } from "../src/router";
 import { Get, Post } from "../src/decorators/methods";
 
 test("buildRoutes collects route definitions from controller metadata", () => {
@@ -67,4 +67,52 @@ test("buildRoutes throws when a class is not decorated with Controller", () => {
       return true;
     },
   );
+});
+
+test("matchRoute matches static and dynamic path segments", () => {
+  @Controller("users")
+  class UsersController {
+    @Get(":id")
+    findOne() {}
+  }
+  const build = buildRoutes([UsersController]);
+
+  const res = matchRoute(build, "GET", "/users/42");
+
+  assert.ok(res);
+
+  assert.deepEqual(res.route, {
+    method: "GET",
+    path: "/users/:id",
+    controllerToken: UsersController,
+    handlerKey: "findOne",
+  });
+
+  assert.deepEqual(res.params, { id: "42" });
+});
+
+test("matchRoute returns undefined when HTTP method does not match", () => {
+  @Controller("users")
+  class UsersController {
+    @Post(":id")
+    findOne() {}
+  }
+  const build = buildRoutes([UsersController]);
+
+  const res = matchRoute(build, "GET", "/users/42");
+
+  assert.equal(res, undefined);
+});
+
+test("matchRoute returns undefined when pathname has extra segments", () => {
+  @Controller("users")
+  class UsersController {
+    @Get(":id")
+    findOne() {}
+  }
+  const build = buildRoutes([UsersController]);
+
+  const res = matchRoute(build, "GET", "/users/42/more");
+
+  assert.equal(res, undefined);
 });

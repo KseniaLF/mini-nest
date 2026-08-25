@@ -13,3 +13,8 @@ export interface RouteDefinition {
   controllerToken: Constructor;
   handlerKey: string;
 }
+
+export interface RouteMatch {
+  route: RouteDefinition;
+  params: Record<string, string>;
+}
