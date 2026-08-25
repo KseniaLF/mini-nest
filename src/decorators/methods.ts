@@ -1,11 +1,5 @@
 import { ROUTE_METADATA } from "../tokens";
-
-type HttpMethod = "GET" | "POST";
-
-interface RouteMetadata {
-  method: HttpMethod;
-  path: string;
-}
+import { HttpMethod, RouteMetadata } from "../types/routing";
 
 function createMethodDecorator(
   method: HttpMethod,
