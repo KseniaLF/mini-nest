@@ -7,7 +7,12 @@ import { Controller } from "../src/decorators/controller";
 import { Get } from "../src/decorators/methods";
 import { Param, Query, Body } from "../src/decorators/params";
 import { buildRoutes } from "../src/router";
-import { buildArguments, parseRequestUrl } from "../src/dispatcher";
+import {
+  buildArguments,
+  parseRequestUrl,
+  readJsonBody,
+} from "../src/dispatcher";
+import { Readable } from "node:stream";
 
 test("buildArguments places param query and body values by parameter index", () => {
   @Controller("users")
@@ -47,4 +52,23 @@ test("parseRequestUrl uses root path when request URL is missing", () => {
     pathname: "/",
     query: {},
   });
+});
+
+test("readJsonBody collects multiple chunks and parses JSON", async () => {
+  const stream = Readable.from(['{"name":', '"Ada"}']);
+  const body = await readJsonBody(stream);
+
+  assert.deepEqual(body, { name: "Ada" });
+});
+
+test("readJsonBody returns undefined for an empty stream", async () => {
+  const stream = Readable.from([]);
+  const body = await readJsonBody(stream);
+
+  assert.deepEqual(body, undefined);
+});
+
+test("readJsonBody rejects malformed JSON", async () => {
+  const stream = Readable.from(['{"name":"Ada"']);
+  await assert.rejects(() => readJsonBody(stream), SyntaxError);
 });
