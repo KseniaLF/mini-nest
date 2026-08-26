@@ -10,12 +10,15 @@ import { buildRoutes, matchRoute } from "../src/router";
 import {
   buildArguments,
   dispatchRoute,
+  handleRequest,
   parseRequestUrl,
   readJsonBody,
 } from "../src/dispatcher";
 import { Readable } from "node:stream";
 import { Container } from "../src/container";
 import { Injectable } from "../src/decorators/injectable";
+import { createServer } from "node:http";
+import { RouteDefinition } from "../src/types/routing";
 
 test("buildArguments places param query and body values by parameter index", () => {
   @Controller("users")
@@ -130,3 +133,96 @@ test("dispatchRoute resolves controller through container and invokes handler wi
 
   assert.equal(serviceReceivedByController, expectedService);
 });
+
+test("handleRequest returns 201 for a successful POST request", async () => {
+  @Controller("users")
+  class UsersController {
+    @Post(":id")
+    method(
+      @Query("notify") notify: string,
+      unused: unknown,
+      @Param("id") id: string,
+      @Body() body: object,
+    ) {
+      return {
+        notify,
+        unused,
+        id,
+        body,
+      };
+    }
+  }
+
+  const container = new Container();
+  const routes = buildRoutes([UsersController]);
+
+  const app = await startTestServer(container, routes);
+  try {
+    const response = await fetch(`${app.baseUrl}/users/42?notify=yes`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ name: "Ada" }),
+    });
+
+    assert.equal(response.status, 201);
+    assert.match(
+      response.headers.get("content-type") ?? "",
+      /application\/json/,
+    );
+
+    const responseBody = await response.json();
+
+    assert.deepEqual(responseBody, {
+      notify: "yes",
+      id: "42",
+      body: { name: "Ada" },
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+async function startTestServer(
+  container: Container,
+  routes: RouteDefinition[],
+): Promise<{
+  baseUrl: string;
+  close: () => Promise<void>;
+}> {
+  const server = createServer((request, response) => {
+    void handleRequest(request, response, container, routes);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+
+    server.listen(0, "127.0.0.1", () => {
+      resolve();
+    });
+  });
+
+  const address = server.address();
+
+  if (address === null || typeof address === "string") {
+    throw new Error("Expected server to listen on a TCP port");
+  }
+
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const close = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  };
+
+  return { baseUrl, close };
+}

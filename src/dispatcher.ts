@@ -3,6 +3,8 @@ import { ParamMetadata } from "./decorators/params";
 import { PARAM_METADATA } from "./tokens";
 import { ParsedRequestUrl, RouteDefinition, RouteMatch } from "./types/routing";
 import { Container } from "./container";
+import { IncomingMessage, ServerResponse } from "node:http";
+import { matchRoute } from "./router";
 
 export function buildArguments(
   route: RouteDefinition,
@@ -106,4 +108,68 @@ export async function dispatchRoute(
   }
 
   return handler.apply(controller, args);
+}
+
+export async function handleRequest(
+  incomingMessage: IncomingMessage,
+  serverResponse: ServerResponse,
+  container: Container,
+  routes: RouteDefinition[],
+): Promise<void> {
+  const { pathname, query } = parseRequestUrl(incomingMessage.url);
+  const method = incomingMessage.method;
+  if (method !== "GET" && method !== "POST") {
+    sendJson(serverResponse, 404, {
+      statusCode: 404,
+      error: "Not Found",
+    });
+    return;
+  }
+
+  const route = matchRoute(routes, method, pathname);
+
+  if (route === undefined) {
+    sendJson(serverResponse, 404, {
+      statusCode: 404,
+      error: "Not Found",
+    });
+    return;
+  }
+
+  let body: unknown = undefined;
+
+  try {
+    if (method === "POST") {
+      body = await readJsonBody(incomingMessage);
+    }
+  } catch (error) {
+    sendJson(serverResponse, 400, {
+      statusCode: 400,
+      error: "Bad Request",
+      message: "Invalid JSON body",
+    });
+    return;
+  }
+
+  try {
+    const result = await dispatchRoute(container, route, query, body);
+    const statusCode = method === "GET" ? 200 : 201;
+
+    sendJson(serverResponse, statusCode, result);
+  } catch (error) {
+    sendJson(serverResponse, 500, {
+      statusCode: 500,
+      error: "Internal Server Error",
+    });
+    return;
+  }
+}
+function sendJson(
+  res: ServerResponse,
+  statusCode: number,
+  data: unknown,
+): void {
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(data));
 }
