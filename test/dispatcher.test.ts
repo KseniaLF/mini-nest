@@ -4,15 +4,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { Controller } from "../src/decorators/controller";
-import { Get } from "../src/decorators/methods";
+import { Get, Post } from "../src/decorators/methods";
 import { Param, Query, Body } from "../src/decorators/params";
-import { buildRoutes } from "../src/router";
+import { buildRoutes, matchRoute } from "../src/router";
 import {
   buildArguments,
+  dispatchRoute,
   parseRequestUrl,
   readJsonBody,
 } from "../src/dispatcher";
 import { Readable } from "node:stream";
+import { Container } from "../src/container";
+import { Injectable } from "../src/decorators/injectable";
 
 test("buildArguments places param query and body values by parameter index", () => {
   @Controller("users")
@@ -25,6 +28,7 @@ test("buildArguments places param query and body values by parameter index", () 
       @Body() body: object,
     ) {}
   }
+
   const build = buildRoutes([UsersController]);
   const args = buildArguments(
     build[0],
@@ -71,4 +75,58 @@ test("readJsonBody returns undefined for an empty stream", async () => {
 test("readJsonBody rejects malformed JSON", async () => {
   const stream = Readable.from(['{"name":"Ada"']);
   await assert.rejects(() => readJsonBody(stream), SyntaxError);
+});
+
+test("dispatchRoute resolves controller through container and invokes handler with built arguments", async () => {
+  let serviceReceivedByController: UserService | undefined;
+
+  @Injectable()
+  class UserService {}
+
+  @Controller("users")
+  class UsersController {
+    constructor(public readonly userService: UserService) {}
+
+    @Post(":id")
+    method(
+      @Query("notify") notify: string,
+      unused: unknown,
+      @Param("id") id: string,
+      @Body() body: object,
+    ) {
+      serviceReceivedByController = this.userService;
+
+      return {
+        notify,
+        unused,
+        id,
+        body,
+      };
+    }
+  }
+
+  const container = new Container();
+
+  const routes = buildRoutes([UsersController]);
+
+  const routeMatch = matchRoute(routes, "POST", "/users/42");
+  assert.ok(routeMatch);
+
+  const result = await dispatchRoute(
+    container,
+    routeMatch,
+    { notify: "yes" },
+    { name: "Ada" },
+  );
+
+  assert.deepEqual(result, {
+    notify: "yes",
+    unused: undefined,
+    id: "42",
+    body: { name: "Ada" },
+  });
+
+  const expectedService = container.resolve(UserService);
+
+  assert.equal(serviceReceivedByController, expectedService);
 });

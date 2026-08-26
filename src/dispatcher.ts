@@ -1,7 +1,8 @@
 import { Readable } from "node:stream";
 import { ParamMetadata } from "./decorators/params";
 import { PARAM_METADATA } from "./tokens";
-import { ParsedRequestUrl, RouteDefinition } from "./types/routing";
+import { ParsedRequestUrl, RouteDefinition, RouteMatch } from "./types/routing";
+import { Container } from "./container";
 
 export function buildArguments(
   route: RouteDefinition,
@@ -84,4 +85,25 @@ export async function readJsonBody(stream: Readable): Promise<unknown> {
       }
     });
   });
+}
+
+export async function dispatchRoute(
+  container: Container,
+  routeMatch: RouteMatch,
+  query: Record<string, string>,
+  body: unknown,
+): Promise<unknown> {
+  const { route, params } = routeMatch;
+
+  const args = buildArguments(route, params, query, body);
+
+  const controller = container.resolve(route.controllerToken);
+
+  const handler = Reflect.get(controller, route.handlerKey);
+
+  if (typeof handler !== "function") {
+    throw new Error(`Handler ${route.handlerKey} is not a function`);
+  }
+
+  return handler.apply(controller, args);
 }
