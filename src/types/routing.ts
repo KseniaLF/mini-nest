@@ -18,3 +18,8 @@ export interface RouteMatch {
   route: RouteDefinition;
   params: Record<string, string>;
 }
+
+export interface ParsedRequestUrl {
+  pathname: string;
+  query: Record<string, string>;
+}

@@ -31,7 +31,20 @@ test("buildArguments places param query and body values by parameter index", () 
   assert.deepEqual(args, ["yes", undefined, "42", { name: "Ada" }]);
 });
 
-test("cdcdcdues by parameter index", () => {
+test("parseRequestUrl separates pathname and query parameters", () => {
   const res = parseRequestUrl("/users/42?notify=yes&limit=5");
-  console.log(res);
+
+  assert.deepEqual(res, {
+    pathname: "/users/42",
+    query: { notify: "yes", limit: "5" },
+  });
+});
+
+test("parseRequestUrl uses root path when request URL is missing", () => {
+  const res = parseRequestUrl(undefined);
+
+  assert.deepEqual(res, {
+    pathname: "/",
+    query: {},
+  });
 });

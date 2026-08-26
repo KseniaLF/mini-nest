@@ -1,6 +1,6 @@
 import { ParamMetadata } from "./decorators/params";
 import { PARAM_METADATA } from "./tokens";
-import { RouteDefinition } from "./types/routing";
+import { ParsedRequestUrl, RouteDefinition } from "./types/routing";
 
 export function buildArguments(
   route: RouteDefinition,
@@ -41,4 +41,11 @@ export function buildArguments(
   return [...args];
 }
 
-export function parseRequestUrl(url: string | undefined) {}
+export function parseRequestUrl(
+  requestUrl: string | undefined,
+): ParsedRequestUrl {
+  const url = new URL(requestUrl ?? "/", "http://localhost");
+  const pathname = url.pathname;
+  const query = Object.fromEntries(url.searchParams.entries());
+  return { pathname, query };
+}
