@@ -15,7 +15,7 @@ export function buildRoutes(controllers: Constructor[]): RouteDefinition[] {
   const res: RouteDefinition[] = [];
 
   for (const Controller of controllers) {
-    const controllerPrefix = Reflect.getOwnMetadata(
+    const controllerPrefix = Reflect.getMetadata(
       CONTROLLER_PREFIX_METADATA,
       Controller,
     ) as string | undefined;
@@ -31,7 +31,7 @@ export function buildRoutes(controllers: Constructor[]): RouteDefinition[] {
     );
 
     for (const name of methodsNames) {
-      const routeMetadata = Reflect.getOwnMetadata(
+      const routeMetadata = Reflect.getMetadata(
         ROUTE_METADATA,
         prototype,
         name,

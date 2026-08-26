@@ -135,6 +135,34 @@ test("dispatchRoute resolves controller through container and invokes handler wi
   assert.equal(serviceReceivedByController, expectedService);
 });
 
+test("handleRequest injects GET path and query parameters into handler arguments", async () => {
+  @Controller("users")
+  class UsersController {
+    @Get(":id")
+    find(@Param("id") id: string, @Query("limit") limit: string) {
+      return { id, limit };
+    }
+  }
+
+  const container = new Container();
+  const routes = buildRoutes([UsersController]);
+  const app = await startTestServer(container, routes);
+
+  try {
+    const response = await fetch(`${app.baseUrl}/users/42?limit=5`);
+    assert.equal(response.status, 200);
+
+    const responseBody = await response.json();
+
+    assert.deepEqual(responseBody, {
+      id: "42",
+      limit: "5",
+    });
+  } finally {
+    await app.close();
+  }
+});
+
 test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () => {
   @Controller("users")
   class UsersController {
