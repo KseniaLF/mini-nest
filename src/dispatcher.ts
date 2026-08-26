@@ -1,17 +1,22 @@
 import { Readable } from "node:stream";
 import { ParamMetadata } from "./decorators/params";
-import { PARAM_METADATA } from "./tokens";
+import { Constructor, PARAM_METADATA } from "./tokens";
 import { ParsedRequestUrl, RouteDefinition, RouteMatch } from "./types/routing";
 import { Container } from "./container";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { matchRoute } from "./router";
+import { DtoValidationError, ValidationPipe } from "./pipes/validation.pipe";
 
-export function buildArguments(
+const validationPipe = new ValidationPipe();
+
+const BUILTIN_TYPES: Constructor[] = [String, Number, Boolean, Array, Object];
+
+export async function buildArguments(
   route: RouteDefinition,
   params: Record<string, string>,
   query: Record<string, string>,
   body: unknown,
-): unknown[] {
+): Promise<unknown[]> {
   const args: unknown[] = [];
 
   const prototype = route.controllerToken.prototype;
@@ -25,9 +30,21 @@ export function buildArguments(
 
   if (paramsMetadata === undefined) return [];
 
+  const parameterTypes = Reflect.getMetadata(
+    "design:paramtypes",
+    prototype,
+    handlerKey,
+  ) as Constructor[] | undefined;
+
   for (const [parameterIndex, metadata] of paramsMetadata) {
     if (metadata.type === "body") {
-      args[parameterIndex] = body;
+      const metatype = parameterTypes?.[parameterIndex];
+      if (metatype && !BUILTIN_TYPES.includes(metatype)) {
+        args[parameterIndex] = await validationPipe.transform(body, metatype);
+      } else {
+        args[parameterIndex] = body;
+      }
+
       continue;
     }
 
@@ -97,7 +114,7 @@ export async function dispatchRoute(
 ): Promise<unknown> {
   const { route, params } = routeMatch;
 
-  const args = buildArguments(route, params, query, body);
+  const args = await buildArguments(route, params, query, body);
 
   const controller = container.resolve(route.controllerToken);
 
@@ -157,6 +174,15 @@ export async function handleRequest(
 
     sendJson(serverResponse, statusCode, result);
   } catch (error) {
+    if (error instanceof DtoValidationError) {
+      sendJson(serverResponse, 400, {
+        statusCode: 400,
+        error: "Bad Request",
+        message: error.issues,
+      });
+      return;
+    }
+
     sendJson(serverResponse, 500, {
       statusCode: 500,
       error: "Internal Server Error",

@@ -19,8 +19,9 @@ import { Container } from "../src/container";
 import { Injectable } from "../src/decorators/injectable";
 import { createServer } from "node:http";
 import { RouteDefinition } from "../src/types/routing";
+import { CreateUserDto } from "../src/dto/create-user.dto";
 
-test("buildArguments places param query and body values by parameter index", () => {
+test("buildArguments places param query and body values by parameter index", async () => {
   @Controller("users")
   class UsersController {
     @Get(":id")
@@ -33,7 +34,7 @@ test("buildArguments places param query and body values by parameter index", () 
   }
 
   const build = buildRoutes([UsersController]);
-  const args = buildArguments(
+  const args = await buildArguments(
     build[0],
     { id: "42" },
     { notify: "yes" },
@@ -134,7 +135,7 @@ test("dispatchRoute resolves controller through container and invokes handler wi
   assert.equal(serviceReceivedByController, expectedService);
 });
 
-test("handleRequest returns 201 for a successful POST request", async () => {
+test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () => {
   @Controller("users")
   class UsersController {
     @Post(":id")
@@ -142,13 +143,14 @@ test("handleRequest returns 201 for a successful POST request", async () => {
       @Query("notify") notify: string,
       unused: unknown,
       @Param("id") id: string,
-      @Body() body: object,
+      @Body() body: CreateUserDto,
     ) {
       return {
         notify,
         unused,
         id,
         body,
+        isDto: body instanceof CreateUserDto,
       };
     }
   }
@@ -163,7 +165,11 @@ test("handleRequest returns 201 for a successful POST request", async () => {
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify({ name: "Ada" }),
+      body: JSON.stringify({
+        name: "Ada",
+        email: "ada@example.com",
+        age: 20,
+      }),
     });
 
     assert.equal(response.status, 201);
@@ -177,8 +183,29 @@ test("handleRequest returns 201 for a successful POST request", async () => {
     assert.deepEqual(responseBody, {
       notify: "yes",
       id: "42",
-      body: { name: "Ada" },
+      body: {
+        name: "Ada",
+        email: "ada@example.com",
+        age: 20,
+      },
+      isDto: true,
     });
+
+    const invalidResponse = await fetch(`${app.baseUrl}/users/42?notify=yes`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Ada",
+        email: "not-an-email",
+        age: 20,
+      }),
+    });
+    assert.equal(invalidResponse.status, 400);
+
+    const invalidResponseBody = await invalidResponse.json();
+    assert.match(JSON.stringify(invalidResponseBody), /email/);
   } finally {
     await app.close();
   }
