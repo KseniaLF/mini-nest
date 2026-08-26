@@ -40,3 +40,5 @@ export function buildArguments(
 
   return [...args];
 }
+
+export function parseRequestUrl(url: string | undefined) {}

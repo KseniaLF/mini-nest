@@ -7,7 +7,7 @@ import { Controller } from "../src/decorators/controller";
 import { Get } from "../src/decorators/methods";
 import { Param, Query, Body } from "../src/decorators/params";
 import { buildRoutes } from "../src/router";
-import { buildArguments } from "../src/dispatcher";
+import { buildArguments, parseRequestUrl } from "../src/dispatcher";
 
 test("buildArguments places param query and body values by parameter index", () => {
   @Controller("users")
@@ -29,4 +29,9 @@ test("buildArguments places param query and body values by parameter index", () 
   );
 
   assert.deepEqual(args, ["yes", undefined, "42", { name: "Ada" }]);
+});
+
+test("cdcdcdues by parameter index", () => {
+  const res = parseRequestUrl("/users/42?notify=yes&limit=5");
+  console.log(res);
 });
