@@ -13,6 +13,11 @@ The project demonstrates how NestJS discovers constructor dependencies and build
 - Singleton scope by default
 - Transient scope
 - Circular dependency detection with a readable dependency chain
+- Decorator-based routing with `@Controller()`, `@Get()`, and `@Post()`
+- Handler arguments through `@Body()`, `@Param()`, and `@Query()`
+- Dynamic route parameters such as `/users/:id`
+- HTTP dispatcher built on `node:http`
+- DTO transformation and validation with `class-transformer` and `class-validator`
 - Automated tests
 - Docker support
 
@@ -47,16 +52,32 @@ docker compose run --rm api npm test
 ```text
 src/
 ├── container.ts
+├── dispatcher.ts
+├── router.ts
 ├── tokens.ts
-└── decorators/
-    ├── inject.ts
-    └── injectable.ts
+├── decorators/
+│   ├── controller.ts
+│   ├── inject.ts
+│   ├── injectable.ts
+│   ├── methods.ts
+│   └── params.ts
+├── dto/
+│   └── create-user.dto.ts
+├── pipes/
+│   └── validation.pipe.ts
+└── types/
+    └── routing.ts
 
 test/
 ├── container.test.ts
+├── controller.test.ts
+├── dispatcher.test.ts
 ├── inject.test.ts
 ├── injectable.test.ts
-└── metadata.test.ts
+├── metadata.test.ts
+├── methods.test.ts
+├── params.test.ts
+└── router.test.ts
 ```
 
 ## How it works
@@ -93,3 +114,65 @@ A -> B -> A
 ```
 
 This prevents an uninformative `RangeError: Maximum call stack size exceeded`.
+
+## HTTP routing and dispatch
+
+`@Controller(prefix)` stores a controller prefix on the class constructor.
+`@Get(path)` and `@Post(path)` store the HTTP method and method-level path in
+the corresponding method metadata.
+
+At startup, `buildRoutes()` reads this metadata and creates full routes:
+
+```text
+@Controller("users") + @Get(":id")
+→ GET /users/:id
+```
+
+For each request, the router compares the HTTP method and pathname. Dynamic
+segments are extracted into an object:
+
+```text
+Template: /users/:id
+Request:  /users/42
+Params:   { id: "42" }
+```
+
+The Dispatcher parses query parameters and a JSON body, resolves the controller
+through the IoC container, invokes the handler, and serializes its result as
+JSON.
+
+## How parameter decorators select argument positions
+
+A parameter decorator receives `(target, propertyKey, parameterIndex)`.
+
+`@Body()`, `@Param(name)`, and `@Query(name)` do not read request data when the
+class is declared. They store instructions in the method metadata:
+
+```text
+index 0 → { type: "param", name: "id" }
+index 1 → { type: "query", name: "limit" }
+index 2 → { type: "body", name: undefined }
+```
+
+When a request arrives, the Dispatcher reads these instructions, takes each
+value from `params`, `query`, or `body`, and assigns it to
+`args[parameterIndex]`.
+
+The handler is called with:
+
+```ts
+handler.apply(controller, args);
+```
+
+Assigning values by index preserves the handler parameter order regardless of
+decorator evaluation order.
+
+## DTO validation
+
+For an `@Body()` parameter, the Dispatcher reads its runtime class from
+`design:paramtypes`.
+
+`ValidationPipe` uses `plainToInstance()` to create a DTO instance and
+`class-validator` to validate its fields. Valid data reaches the handler as a
+DTO instance. Invalid data produces HTTP 400 with every invalid field and its
+constraint messages.

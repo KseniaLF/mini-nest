@@ -1,6 +1,6 @@
 services:
   api:
-    image: mini-nest:part-1-ioc
+    image: mini-nest:part-2-http
     build:
       context: .
       target: test
