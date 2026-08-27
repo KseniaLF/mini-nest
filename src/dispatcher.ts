@@ -135,7 +135,20 @@ export async function handleRequest(
 ): Promise<void> {
   const { pathname, query } = parseRequestUrl(incomingMessage.url);
   const method = incomingMessage.method;
+
   if (method !== "GET" && method !== "POST") {
+    const pathExists =
+      matchRoute(routes, "GET", pathname) !== undefined ||
+      matchRoute(routes, "POST", pathname) !== undefined;
+
+    if (pathExists) {
+      sendJson(serverResponse, 405, {
+        statusCode: 405,
+        error: "Method Not Allowed",
+      });
+      return;
+    }
+
     sendJson(serverResponse, 404, {
       statusCode: 404,
       error: "Not Found",
