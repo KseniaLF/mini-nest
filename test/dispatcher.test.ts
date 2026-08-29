@@ -19,9 +19,11 @@ import { Container } from "../src/container";
 import { Injectable } from "../src/decorators/injectable";
 import { createServer } from "node:http";
 import { RouteDefinition } from "../src/types/routing";
-import { CreateUserDto } from "../src/dto/create-user.dto";
+import type { CreateUserDto } from "../src/dto/create-user.dto";
+import type { HttpContext } from "../src/types/lifecycle";
+import { DEFAULT_LIFECYCLE_CONFIG } from "../src/lifecycle";
 
-test("buildArguments places param query and body values by parameter index", async () => {
+test("buildArguments describes raw handler arguments by parameter index", async () => {
   @Controller("users")
   class UsersController {
     @Get(":id")
@@ -41,7 +43,26 @@ test("buildArguments places param query and body values by parameter index", asy
     { name: "Ada" },
   );
 
-  assert.deepEqual(args, ["yes", undefined, "42", { name: "Ada" }]);
+  assert.deepEqual(args, [
+    {
+      index: 0,
+      value: "yes",
+      metadata: { type: "query", name: "notify" },
+      metatype: String,
+    },
+    {
+      index: 2,
+      value: "42",
+      metadata: { type: "param", name: "id" },
+      metatype: String,
+    },
+    {
+      index: 3,
+      value: { name: "Ada" },
+      metadata: { type: "body", name: undefined },
+      metatype: Object,
+    },
+  ]);
 });
 
 test("parseRequestUrl separates pathname and query parameters", () => {
@@ -116,11 +137,15 @@ test("dispatchRoute resolves controller through container and invokes handler wi
   const routeMatch = matchRoute(routes, "POST", "/users/42");
   assert.ok(routeMatch);
 
+  const context = {} as HttpContext;
+
   const result = await dispatchRoute(
     container,
     routeMatch,
     { notify: "yes" },
     { name: "Ada" },
+    context,
+    DEFAULT_LIFECYCLE_CONFIG,
   );
 
   assert.deepEqual(result, {
@@ -178,7 +203,6 @@ test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () =>
         unused,
         id,
         body,
-        isDto: body instanceof CreateUserDto,
       };
     }
   }
@@ -216,7 +240,6 @@ test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () =>
         email: "ada@example.com",
         age: 20,
       },
-      isDto: true,
     });
 
     const invalidResponse = await fetch(`${app.baseUrl}/users/42?notify=yes`, {

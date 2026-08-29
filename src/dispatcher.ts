@@ -5,19 +5,21 @@ import { ParsedRequestUrl, RouteDefinition, RouteMatch } from "./types/routing";
 import { Container } from "./container";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { matchRoute } from "./router";
-import { DtoValidationError, ValidationPipe } from "./pipes/validation.pipe";
-
-const validationPipe = new ValidationPipe();
-
-const BUILTIN_TYPES: Constructor[] = [String, Number, Boolean, Array, Object];
+import { DtoValidationError } from "./pipes/validation.pipe";
+import type {
+  ArgumentDefinition,
+  HttpContext,
+  LifecycleConfig,
+} from "./types/lifecycle";
+import { DEFAULT_LIFECYCLE_CONFIG, executeLifecycle } from "./lifecycle";
 
 export async function buildArguments(
   route: RouteDefinition,
   params: Record<string, string>,
   query: Record<string, string>,
   body: unknown,
-): Promise<unknown[]> {
-  const args: unknown[] = [];
+): Promise<ArgumentDefinition[]> {
+  const args: ArgumentDefinition[] = [];
 
   const prototype = route.controllerToken.prototype;
   const handlerKey = route.handlerKey;
@@ -37,29 +39,36 @@ export async function buildArguments(
   ) as Constructor[] | undefined;
 
   for (const [parameterIndex, metadata] of paramsMetadata) {
-    if (metadata.type === "body") {
-      const metatype = parameterTypes?.[parameterIndex];
-      if (metatype && !BUILTIN_TYPES.includes(metatype)) {
-        args[parameterIndex] = await validationPipe.transform(body, metatype);
-      } else {
-        args[parameterIndex] = body;
-      }
+    let value: unknown;
 
+    if (metadata.type === "body") {
+      args.push({
+        index: parameterIndex,
+        value: body,
+        metadata,
+        metatype: parameterTypes?.[parameterIndex],
+      });
       continue;
     }
 
     if (metadata.name === undefined) continue;
 
     if (metadata.type === "param") {
-      args[parameterIndex] = params[metadata.name];
+      value = params[metadata.name];
+    }
+    if (metadata.type === "query") {
+      value = query[metadata.name];
     }
 
-    if (metadata.type === "query") {
-      args[parameterIndex] = query[metadata.name];
-    }
+    args.push({
+      index: parameterIndex,
+      value,
+      metadata,
+      metatype: parameterTypes?.[parameterIndex],
+    });
   }
 
-  return [...args];
+  return args.sort((a, b) => a.index - b.index);
 }
 
 export function parseRequestUrl(
@@ -111,6 +120,8 @@ export async function dispatchRoute(
   routeMatch: RouteMatch,
   query: Record<string, string>,
   body: unknown,
+  context: HttpContext,
+  lifecycleConfig: LifecycleConfig,
 ): Promise<unknown> {
   const { route, params } = routeMatch;
 
@@ -124,7 +135,12 @@ export async function dispatchRoute(
     throw new Error(`Handler ${route.handlerKey} is not a function`);
   }
 
-  return handler.apply(controller, args);
+  return executeLifecycle(
+    lifecycleConfig,
+    context,
+    args,
+    (...transformedArgs) => handler.apply(controller, transformedArgs),
+  );
 }
 
 export async function handleRequest(
@@ -132,7 +148,15 @@ export async function handleRequest(
   serverResponse: ServerResponse,
   container: Container,
   routes: RouteDefinition[],
+  lifecycleConfig?: LifecycleConfig,
 ): Promise<void> {
+  lifecycleConfig = lifecycleConfig ?? DEFAULT_LIFECYCLE_CONFIG;
+
+  const context: HttpContext = {
+    request: incomingMessage,
+    response: serverResponse,
+  };
+
   const { pathname, query } = parseRequestUrl(incomingMessage.url);
   const method = incomingMessage.method;
 
@@ -182,7 +206,14 @@ export async function handleRequest(
   }
 
   try {
-    const result = await dispatchRoute(container, route, query, body);
+    const result = await dispatchRoute(
+      container,
+      route,
+      query,
+      body,
+      context,
+      lifecycleConfig,
+    );
     const statusCode = method === "GET" ? 200 : 201;
 
     sendJson(serverResponse, statusCode, result);

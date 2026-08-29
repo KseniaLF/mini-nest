@@ -10,7 +10,12 @@ import type {
   Middleware,
   Pipe,
 } from "../src/types/lifecycle";
-import { executeLifecycle } from "../src/lifecycle";
+import { executeLifecycle, applyPipes } from "../src/lifecycle";
+import { Controller } from "../src/decorators/controller";
+import { Get } from "../src/decorators/methods";
+import { Param, Query, Body } from "../src/decorators/params";
+import { buildRoutes } from "../src/router";
+import { buildArguments } from "../src/dispatcher";
 
 test("executes request lifecycle stages in the correct order", async () => {
   const calls: string[] = [];
@@ -65,7 +70,14 @@ test("executes request lifecycle stages in the correct order", async () => {
   await executeLifecycle(
     lifecycleConfig,
     context,
-    { message: "hello" },
+    [
+      {
+        index: 0,
+        value: { name: "Ada" },
+        metadata: { type: "body", name: undefined },
+        metatype: Object,
+      },
+    ],
     handler,
   );
 
@@ -76,5 +88,43 @@ test("executes request lifecycle stages in the correct order", async () => {
     "pipe",
     "handler",
     "interceptor:after",
+  ]);
+});
+
+test("applies pipe and restores handler arguments by index", async () => {
+  const pipe: Pipe = {
+    async transform(value: unknown, argument) {
+      if (argument.metadata.type === "body") {
+        return { ...(value as Record<string, unknown>), validated: true };
+      }
+      return value;
+    },
+  };
+
+  @Controller("users")
+  class UsersController {
+    @Get(":id")
+    method(
+      @Query("notify") notify: string,
+      unused: unknown,
+      @Param("id") id: string,
+      @Body() body: object,
+    ) {}
+  }
+
+  const build = buildRoutes([UsersController]);
+  const definitions = await buildArguments(
+    build[0],
+    { id: "42" },
+    { notify: "yes" },
+    { name: "Ada" },
+  );
+  const args = await applyPipes(definitions, pipe);
+
+  assert.deepEqual(args, [
+    "yes",
+    undefined,
+    "42",
+    { name: "Ada", validated: true },
   ]);
 });
