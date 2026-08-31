@@ -20,21 +20,21 @@ import { buildArguments } from "../src/dispatcher";
 test("executes request lifecycle stages in the correct order", async () => {
   const calls: string[] = [];
 
-  const guard: Guard = {
+  const allowAllGuard: Guard = {
     canActivate(_context) {
       calls.push("guard");
       return true;
     },
   };
 
-  const pipe: Pipe = {
+  const passthroughPipe: Pipe = {
     transform(value: unknown) {
       calls.push("pipe");
       return value;
     },
   };
 
-  const interceptor: Interceptor = {
+  const passthroughInterceptor: Interceptor = {
     async intercept(_context, next) {
       calls.push("interceptor:before");
 
@@ -46,7 +46,7 @@ test("executes request lifecycle stages in the correct order", async () => {
     },
   };
 
-  const middleware: Middleware = {
+  const passthroughMiddleware: Middleware = {
     async use(_context, next) {
       calls.push("middleware");
       return next();
@@ -59,10 +59,10 @@ test("executes request lifecycle stages in the correct order", async () => {
   }
 
   const lifecycleConfig: LifecycleConfig = {
-    middleware,
-    guard,
-    pipe,
-    interceptor,
+    middleware: passthroughMiddleware,
+    guard: allowAllGuard,
+    pipe: passthroughPipe,
+    interceptor: passthroughInterceptor,
   };
 
   const context = {} as HttpContext;
