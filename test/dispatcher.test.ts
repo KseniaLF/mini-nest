@@ -19,9 +19,13 @@ import { Container } from "../src/container";
 import { Injectable } from "../src/decorators/injectable";
 import { createServer } from "node:http";
 import { RouteDefinition } from "../src/types/routing";
-import type { CreateUserDto } from "../src/dto/create-user.dto";
-import type { HttpContext } from "../src/types/lifecycle";
+import {
+  CreateUserSchema,
+  type CreateUserDto,
+} from "../src/dto/create-user.dto";
+import type { HttpContext, LifecycleConfig } from "../src/types/lifecycle";
 import { DEFAULT_LIFECYCLE_CONFIG } from "../src/lifecycle";
+import { ZodValidationPipe } from "../src/pipes/zod-validation.pipe";
 
 test("buildArguments describes raw handler arguments by parameter index", async () => {
   @Controller("users")
@@ -171,6 +175,7 @@ test("handleRequest injects GET path and query parameters into handler arguments
 
   const container = new Container();
   const routes = buildRoutes([UsersController]);
+
   const app = await startTestServer(container, routes);
 
   try {
@@ -209,8 +214,13 @@ test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () =>
 
   const container = new Container();
   const routes = buildRoutes([UsersController]);
+  const lifecycleConfig: LifecycleConfig = {
+    ...DEFAULT_LIFECYCLE_CONFIG,
+    pipe: new ZodValidationPipe(CreateUserSchema),
+  };
 
-  const app = await startTestServer(container, routes);
+  const app = await startTestServer(container, routes, lifecycleConfig);
+
   try {
     const response = await fetch(`${app.baseUrl}/users/42?notify=yes`, {
       method: "POST",
@@ -265,12 +275,13 @@ test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () =>
 async function startTestServer(
   container: Container,
   routes: RouteDefinition[],
+  lifecycleConfig?: LifecycleConfig,
 ): Promise<{
   baseUrl: string;
   close: () => Promise<void>;
 }> {
   const server = createServer((request, response) => {
-    void handleRequest(request, response, container, routes);
+    void handleRequest(request, response, container, routes, lifecycleConfig);
   });
 
   await new Promise<void>((resolve, reject) => {

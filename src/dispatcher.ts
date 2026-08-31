@@ -5,13 +5,13 @@ import { ParsedRequestUrl, RouteDefinition, RouteMatch } from "./types/routing";
 import { Container } from "./container";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { matchRoute } from "./router";
-import { DtoValidationError } from "./pipes/validation.pipe";
 import type {
   ArgumentDefinition,
   HttpContext,
   LifecycleConfig,
 } from "./types/lifecycle";
 import { DEFAULT_LIFECYCLE_CONFIG, executeLifecycle } from "./lifecycle";
+import { ValidationError } from "./pipes/zod-validation.pipe";
 
 export async function buildArguments(
   route: RouteDefinition,
@@ -218,7 +218,7 @@ export async function handleRequest(
 
     sendJson(serverResponse, statusCode, result);
   } catch (error) {
-    if (error instanceof DtoValidationError) {
+    if (error instanceof ValidationError) {
       sendJson(serverResponse, 400, {
         statusCode: 400,
         error: "Bad Request",
