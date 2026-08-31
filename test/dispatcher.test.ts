@@ -26,6 +26,7 @@ import {
 import type { HttpContext, LifecycleConfig } from "../src/types/lifecycle";
 import { DEFAULT_LIFECYCLE_CONFIG } from "../src/lifecycle";
 import { ZodValidationPipe } from "../src/pipes/zod-validation.pipe";
+import { AuthGuard } from "../src/guards/auth.guard";
 
 test("buildArguments describes raw handler arguments by parameter index", async () => {
   @Controller("users")
@@ -315,3 +316,36 @@ async function startTestServer(
 
   return { baseUrl, close };
 }
+
+test("handleRequest returns 403 and skips handler when guard denies access", async () => {
+  let handlerCalls = 0;
+
+  @Controller("")
+  class UsersController {
+    @Get("")
+    method() {
+      handlerCalls++;
+    }
+  }
+
+  const container = new Container();
+  const routes = buildRoutes([UsersController]);
+  const lifecycleConfig: LifecycleConfig = {
+    ...DEFAULT_LIFECYCLE_CONFIG,
+    guard: new AuthGuard(),
+  };
+
+  const app = await startTestServer(container, routes, lifecycleConfig);
+
+  try {
+    const response = await fetch(`${app.baseUrl}`, {
+      method: "GET",
+      headers: {},
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(handlerCalls, 0);
+  } finally {
+    await app.close();
+  }
+});

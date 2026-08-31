@@ -12,6 +12,7 @@ import type {
 } from "./types/lifecycle";
 import { DEFAULT_LIFECYCLE_CONFIG, executeLifecycle } from "./lifecycle";
 import { ValidationError } from "./pipes/zod-validation.pipe";
+import { ForbiddenError } from "./errors";
 
 export async function buildArguments(
   route: RouteDefinition,
@@ -218,6 +219,14 @@ export async function handleRequest(
 
     sendJson(serverResponse, statusCode, result);
   } catch (error) {
+    if (error instanceof ForbiddenError) {
+      sendJson(serverResponse, 403, {
+        statusCode: 403,
+        error: "Forbidden",
+      });
+      return;
+    }
+
     if (error instanceof ValidationError) {
       sendJson(serverResponse, 400, {
         statusCode: 400,

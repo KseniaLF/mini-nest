@@ -1,3 +1,4 @@
+import { ForbiddenError } from "./errors";
 import type {
   ArgumentDefinition,
   Guard,
@@ -54,7 +55,7 @@ export async function executeLifecycle(
   async function nextMiddleware() {
     const guard = await config.guard.canActivate(context);
 
-    if (!guard) throw new Error("Forbidden");
+    if (!guard) throw new ForbiddenError();
 
     return config.interceptor.intercept(context, nextInterceptor);
   }
