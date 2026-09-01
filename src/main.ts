@@ -7,17 +7,21 @@ import { Container } from "./container";
 import { Controller } from "./decorators/controller";
 import { Get } from "./decorators/methods";
 import { Param, Query } from "./decorators/params";
-import { LifecycleConfig } from "./types/lifecycle";
+import type { LifecycleConfig } from "./types/lifecycle";
 import { DEFAULT_LIFECYCLE_CONFIG } from "./lifecycle";
 import { LoggingInterceptor } from "./interceptors/logging.interceptor";
 import { AuthGuard } from "./guards/auth.guard";
 import { requestContextMiddleware } from "./context/request-context";
+import { RequestInfoService } from "./services/request-info.service";
 
 @Controller("users")
 class UsersController {
+  constructor(private readonly requestInfoService: RequestInfoService) {}
+
   @Get(":id")
   find(@Param("id") id: string, @Query("limit") limit: string) {
-    return { id, limit };
+    const requestId = this.requestInfoService.getRequestId();
+    return { id, limit, requestId };
   }
 }
 const container = new Container();
