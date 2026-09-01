@@ -317,11 +317,27 @@ test("exception filter maps domain errors and hides unexpected details", async (
     boom() {
       throw new Error("boom secret");
     }
+
+    @Get("/interceptor-error")
+    interceptorError() {}
   }
 
   const container = new Container();
   const routes = buildRoutes([UsersController]);
-  const lifecycleConfig: LifecycleConfig = DEFAULT_LIFECYCLE_CONFIG;
+  const lifecycleConfig: LifecycleConfig = {
+    ...DEFAULT_LIFECYCLE_CONFIG,
+    interceptor: {
+      intercept(
+        context: HttpContext,
+        next: () => Promise<unknown>,
+      ): Promise<unknown> {
+        if (context.request.url === "/interceptor-error") {
+          throw new Error("Interceptor secret");
+        }
+        return next();
+      },
+    },
+  };
 
   const app = await startTestServer(container, routes, lifecycleConfig);
 
@@ -339,6 +355,16 @@ test("exception filter maps domain errors and hides unexpected details", async (
     assert.equal(boomResponse.status, 500);
     const unexpectedBody = await boomResponse.text();
     assert.doesNotMatch(unexpectedBody, /boom|secret|at .*\.ts:/);
+
+    const interceptorResponse = await fetch(
+      `${app.baseUrl}/interceptor-error`,
+      {
+        method: "GET",
+      },
+    );
+    assert.equal(interceptorResponse.status, 500);
+    const interceptorBody = await interceptorResponse.text();
+    assert.doesNotMatch(interceptorBody, /interceptor secret/i);
   } finally {
     await app.close();
   }
