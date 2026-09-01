@@ -10,15 +10,12 @@ import { buildRoutes, matchRoute } from "../src/router";
 import {
   buildArguments,
   dispatchRoute,
-  handleRequest,
   parseRequestUrl,
   readJsonBody,
 } from "../src/dispatcher";
 import { Readable } from "node:stream";
 import { Container } from "../src/container";
 import { Injectable } from "../src/decorators/injectable";
-import { createServer } from "node:http";
-import { RouteDefinition } from "../src/types/routing";
 import {
   CreateUserSchema,
   type CreateUserDto,
@@ -28,6 +25,7 @@ import { DEFAULT_LIFECYCLE_CONFIG } from "../src/lifecycle";
 import { ZodValidationPipe } from "../src/pipes/zod-validation.pipe";
 import { AuthGuard } from "../src/guards/auth.guard";
 import { NotFoundError } from "../src/errors";
+import { startTestServer } from "./helpers";
 
 test("buildArguments describes raw handler arguments by parameter index", async () => {
   @Controller("users")
@@ -273,50 +271,6 @@ test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () =>
     await app.close();
   }
 });
-
-async function startTestServer(
-  container: Container,
-  routes: RouteDefinition[],
-  lifecycleConfig?: LifecycleConfig,
-): Promise<{
-  baseUrl: string;
-  close: () => Promise<void>;
-}> {
-  const server = createServer((request, response) => {
-    void handleRequest(request, response, container, routes, lifecycleConfig);
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-
-    server.listen(0, "127.0.0.1", () => {
-      resolve();
-    });
-  });
-
-  const address = server.address();
-
-  if (address === null || typeof address === "string") {
-    throw new Error("Expected server to listen on a TCP port");
-  }
-
-  const baseUrl = `http://127.0.0.1:${address.port}`;
-
-  const close = (): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
-      });
-    });
-  };
-
-  return { baseUrl, close };
-}
 
 test("handleRequest returns 403 and skips handler when guard denies access", async () => {
   let handlerCalls = 0;

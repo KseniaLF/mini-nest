@@ -11,6 +11,7 @@ import { LifecycleConfig } from "./types/lifecycle";
 import { DEFAULT_LIFECYCLE_CONFIG } from "./lifecycle";
 import { LoggingInterceptor } from "./interceptors/logging.interceptor";
 import { AuthGuard } from "./guards/auth.guard";
+import { requestContextMiddleware } from "./context/request-context";
 
 @Controller("users")
 class UsersController {
@@ -24,6 +25,7 @@ const routes = buildRoutes([UsersController]);
 
 const lifecycleConfig: LifecycleConfig = {
   ...DEFAULT_LIFECYCLE_CONFIG,
+  middleware: requestContextMiddleware,
   guard: new AuthGuard(),
   interceptor: new LoggingInterceptor(),
 };
