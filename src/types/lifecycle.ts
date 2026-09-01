@@ -29,6 +29,7 @@ export interface LifecycleConfig {
   guard: Guard;
   pipe: Pipe;
   interceptor: Interceptor;
+  filter: ExceptionFilter;
 }
 
 export interface HttpContext {
@@ -41,4 +42,8 @@ export interface ArgumentDefinition {
   value: unknown;
   metadata: ParamMetadata;
   metatype?: Constructor;
+}
+
+export interface ExceptionFilter {
+  catch(error: unknown, context: HttpContext): void;
 }

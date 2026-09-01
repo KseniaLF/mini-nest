@@ -27,6 +27,7 @@ import type { HttpContext, LifecycleConfig } from "../src/types/lifecycle";
 import { DEFAULT_LIFECYCLE_CONFIG } from "../src/lifecycle";
 import { ZodValidationPipe } from "../src/pipes/zod-validation.pipe";
 import { AuthGuard } from "../src/guards/auth.guard";
+import { NotFoundError } from "../src/errors";
 
 test("buildArguments describes raw handler arguments by parameter index", async () => {
   @Controller("users")
@@ -345,6 +346,45 @@ test("handleRequest returns 403 and skips handler when guard denies access", asy
 
     assert.equal(response.status, 403);
     assert.equal(handlerCalls, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test("exception filter maps domain errors and hides unexpected details", async () => {
+  @Controller("")
+  class UsersController {
+    @Get("/missing")
+    missing() {
+      throw new NotFoundError("User 42 not found");
+    }
+
+    @Get("/boom")
+    boom() {
+      throw new Error("boom secret");
+    }
+  }
+
+  const container = new Container();
+  const routes = buildRoutes([UsersController]);
+  const lifecycleConfig: LifecycleConfig = DEFAULT_LIFECYCLE_CONFIG;
+
+  const app = await startTestServer(container, routes, lifecycleConfig);
+
+  try {
+    const missingResponse = await fetch(`${app.baseUrl}/missing`, {
+      method: "GET",
+    });
+    assert.equal(missingResponse.status, 404);
+    const missingBody = await missingResponse.text();
+    assert.match(missingBody, /User 42 not found/);
+
+    const boomResponse = await fetch(`${app.baseUrl}/boom`, {
+      method: "GET",
+    });
+    assert.equal(boomResponse.status, 500);
+    const unexpectedBody = await boomResponse.text();
+    assert.doesNotMatch(unexpectedBody, /boom|secret|at .*\.ts:/);
   } finally {
     await app.close();
   }

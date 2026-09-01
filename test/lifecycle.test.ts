@@ -10,7 +10,11 @@ import type {
   Middleware,
   Pipe,
 } from "../src/types/lifecycle";
-import { executeLifecycle, applyPipes } from "../src/lifecycle";
+import {
+  executeLifecycle,
+  applyPipes,
+  DEFAULT_LIFECYCLE_CONFIG,
+} from "../src/lifecycle";
 import { Controller } from "../src/decorators/controller";
 import { Get } from "../src/decorators/methods";
 import { Param, Query, Body } from "../src/decorators/params";
@@ -63,6 +67,7 @@ test("executes request lifecycle stages in the correct order", async () => {
     guard: allowAllGuard,
     pipe: passthroughPipe,
     interceptor: passthroughInterceptor,
+    filter: DEFAULT_LIFECYCLE_CONFIG.filter,
   };
 
   const context = {} as HttpContext;

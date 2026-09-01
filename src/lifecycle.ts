@@ -1,4 +1,5 @@
 import { ForbiddenError } from "./errors";
+import { GlobalExceptionFilter } from "./filters/exception.filter";
 import type {
   ArgumentDefinition,
   Guard,
@@ -39,6 +40,7 @@ export const DEFAULT_LIFECYCLE_CONFIG: LifecycleConfig = {
   guard,
   pipe,
   interceptor,
+  filter: new GlobalExceptionFilter(),
 };
 
 export async function executeLifecycle(
