@@ -10,18 +10,24 @@ import { buildRoutes, matchRoute } from "../src/router";
 import {
   buildArguments,
   dispatchRoute,
-  handleRequest,
   parseRequestUrl,
   readJsonBody,
 } from "../src/dispatcher";
 import { Readable } from "node:stream";
 import { Container } from "../src/container";
 import { Injectable } from "../src/decorators/injectable";
-import { createServer } from "node:http";
-import { RouteDefinition } from "../src/types/routing";
-import { CreateUserDto } from "../src/dto/create-user.dto";
+import {
+  CreateUserSchema,
+  type CreateUserDto,
+} from "../src/dto/create-user.dto";
+import type { HttpContext, LifecycleConfig } from "../src/types/lifecycle";
+import { DEFAULT_LIFECYCLE_CONFIG } from "../src/lifecycle";
+import { ZodValidationPipe } from "../src/pipes/zod-validation.pipe";
+import { AuthGuard } from "../src/guards/auth.guard";
+import { NotFoundError } from "../src/errors";
+import { startTestServer } from "./helpers";
 
-test("buildArguments places param query and body values by parameter index", async () => {
+test("buildArguments describes raw handler arguments by parameter index", async () => {
   @Controller("users")
   class UsersController {
     @Get(":id")
@@ -41,7 +47,26 @@ test("buildArguments places param query and body values by parameter index", asy
     { name: "Ada" },
   );
 
-  assert.deepEqual(args, ["yes", undefined, "42", { name: "Ada" }]);
+  assert.deepEqual(args, [
+    {
+      index: 0,
+      value: "yes",
+      metadata: { type: "query", name: "notify" },
+      metatype: String,
+    },
+    {
+      index: 2,
+      value: "42",
+      metadata: { type: "param", name: "id" },
+      metatype: String,
+    },
+    {
+      index: 3,
+      value: { name: "Ada" },
+      metadata: { type: "body", name: undefined },
+      metatype: Object,
+    },
+  ]);
 });
 
 test("parseRequestUrl separates pathname and query parameters", () => {
@@ -116,11 +141,15 @@ test("dispatchRoute resolves controller through container and invokes handler wi
   const routeMatch = matchRoute(routes, "POST", "/users/42");
   assert.ok(routeMatch);
 
+  const context = {} as HttpContext;
+
   const result = await dispatchRoute(
     container,
     routeMatch,
     { notify: "yes" },
     { name: "Ada" },
+    context,
+    DEFAULT_LIFECYCLE_CONFIG,
   );
 
   assert.deepEqual(result, {
@@ -146,6 +175,7 @@ test("handleRequest injects GET path and query parameters into handler arguments
 
   const container = new Container();
   const routes = buildRoutes([UsersController]);
+
   const app = await startTestServer(container, routes);
 
   try {
@@ -178,15 +208,19 @@ test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () =>
         unused,
         id,
         body,
-        isDto: body instanceof CreateUserDto,
       };
     }
   }
 
   const container = new Container();
   const routes = buildRoutes([UsersController]);
+  const lifecycleConfig: LifecycleConfig = {
+    ...DEFAULT_LIFECYCLE_CONFIG,
+    pipe: new ZodValidationPipe(CreateUserSchema),
+  };
 
-  const app = await startTestServer(container, routes);
+  const app = await startTestServer(container, routes, lifecycleConfig);
+
   try {
     const response = await fetch(`${app.baseUrl}/users/42?notify=yes`, {
       method: "POST",
@@ -216,7 +250,6 @@ test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () =>
         email: "ada@example.com",
         age: 20,
       },
-      isDto: true,
     });
 
     const invalidResponse = await fetch(`${app.baseUrl}/users/42?notify=yes`, {
@@ -239,45 +272,100 @@ test("handleRequest transforms valid DTOs and rejects invalid DTOs", async () =>
   }
 });
 
-async function startTestServer(
-  container: Container,
-  routes: RouteDefinition[],
-): Promise<{
-  baseUrl: string;
-  close: () => Promise<void>;
-}> {
-  const server = createServer((request, response) => {
-    void handleRequest(request, response, container, routes);
-  });
+test("handleRequest returns 403 and skips handler when guard denies access", async () => {
+  let handlerCalls = 0;
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-
-    server.listen(0, "127.0.0.1", () => {
-      resolve();
-    });
-  });
-
-  const address = server.address();
-
-  if (address === null || typeof address === "string") {
-    throw new Error("Expected server to listen on a TCP port");
+  @Controller("")
+  class UsersController {
+    @Get("")
+    method() {
+      handlerCalls++;
+    }
   }
 
-  const baseUrl = `http://127.0.0.1:${address.port}`;
-
-  const close = (): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
-      });
-    });
+  const container = new Container();
+  const routes = buildRoutes([UsersController]);
+  const lifecycleConfig: LifecycleConfig = {
+    ...DEFAULT_LIFECYCLE_CONFIG,
+    guard: new AuthGuard(),
   };
 
-  return { baseUrl, close };
-}
+  const app = await startTestServer(container, routes, lifecycleConfig);
+
+  try {
+    const response = await fetch(`${app.baseUrl}`, {
+      method: "GET",
+      headers: {},
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(handlerCalls, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test("exception filter maps domain errors and hides unexpected details", async () => {
+  @Controller("")
+  class UsersController {
+    @Get("/missing")
+    missing() {
+      throw new NotFoundError("User 42 not found");
+    }
+
+    @Get("/boom")
+    boom() {
+      throw new Error("boom secret");
+    }
+
+    @Get("/interceptor-error")
+    interceptorError() {}
+  }
+
+  const container = new Container();
+  const routes = buildRoutes([UsersController]);
+  const lifecycleConfig: LifecycleConfig = {
+    ...DEFAULT_LIFECYCLE_CONFIG,
+    interceptor: {
+      intercept(
+        context: HttpContext,
+        next: () => Promise<unknown>,
+      ): Promise<unknown> {
+        if (context.request.url === "/interceptor-error") {
+          throw new Error("Interceptor secret");
+        }
+        return next();
+      },
+    },
+  };
+
+  const app = await startTestServer(container, routes, lifecycleConfig);
+
+  try {
+    const missingResponse = await fetch(`${app.baseUrl}/missing`, {
+      method: "GET",
+    });
+    assert.equal(missingResponse.status, 404);
+    const missingBody = await missingResponse.text();
+    assert.match(missingBody, /User 42 not found/);
+
+    const boomResponse = await fetch(`${app.baseUrl}/boom`, {
+      method: "GET",
+    });
+    assert.equal(boomResponse.status, 500);
+    const unexpectedBody = await boomResponse.text();
+    assert.doesNotMatch(unexpectedBody, /boom|secret|at .*\.ts:/);
+
+    const interceptorResponse = await fetch(
+      `${app.baseUrl}/interceptor-error`,
+      {
+        method: "GET",
+      },
+    );
+    assert.equal(interceptorResponse.status, 500);
+    const interceptorBody = await interceptorResponse.text();
+    assert.doesNotMatch(interceptorBody, /interceptor secret/i);
+  } finally {
+    await app.close();
+  }
+});
