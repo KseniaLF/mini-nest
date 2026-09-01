@@ -17,7 +17,9 @@ The project demonstrates how NestJS discovers constructor dependencies and build
 - Handler arguments through `@Body()`, `@Param()`, and `@Query()`
 - Dynamic route parameters such as `/users/:id`
 - HTTP dispatcher built on `node:http`
-- DTO transformation and validation with `class-transformer` and `class-validator`
+- Request validation with Zod 4 pipes
+- Guards, interceptors, middleware, and exception filters
+- Request-scoped context with `AsyncLocalStorage`
 - Automated tests
 - Docker support
 
@@ -53,8 +55,11 @@ docker compose run --rm api npm test
 src/
 ├── container.ts
 ├── dispatcher.ts
+├── lifecycle.ts
 ├── router.ts
 ├── tokens.ts
+├── context/
+│   └── request-context.ts
 ├── decorators/
 │   ├── controller.ts
 │   ├── inject.ts
@@ -63,21 +68,29 @@ src/
 │   └── params.ts
 ├── dto/
 │   └── create-user.dto.ts
+├── filters/
+│   └── exception.filter.ts
+├── guards/
+│   └── auth.guard.ts
+├── interceptors/
+│   └── logging.interceptor.ts
 ├── pipes/
-│   └── validation.pipe.ts
+│   └── zod-validation.pipe.ts
+├── services/
+│   └── request-info.service.ts
 └── types/
+    ├── lifecycle.ts
     └── routing.ts
 
 test/
+├── auth.guard.test.ts
 ├── container.test.ts
 ├── controller.test.ts
 ├── dispatcher.test.ts
-├── inject.test.ts
-├── injectable.test.ts
-├── metadata.test.ts
-├── methods.test.ts
-├── params.test.ts
-└── router.test.ts
+├── lifecycle.test.ts
+├── logging.interceptor.test.ts
+├── request-context.test.ts
+└── ...
 ```
 
 ## How it works
@@ -161,18 +174,61 @@ value from `params`, `query`, or `body`, and assigns it to
 The handler is called with:
 
 ```ts
-handler.apply(controller, args);
+handler.apply(controller, transformedArgs);
 ```
 
 Assigning values by index preserves the handler parameter order regardless of
 decorator evaluation order.
 
-## DTO validation
+## Request lifecycle
 
-For an `@Body()` parameter, the Dispatcher reads its runtime class from
-`design:paramtypes`.
+Every matched HTTP request passes through the following lifecycle:
 
-`ValidationPipe` uses `plainToInstance()` to create a DTO instance and
-`class-validator` to validate its fields. Valid data reaches the handler as a
-DTO instance. Invalid data produces HTTP 400 with every invalid field and its
-constraint messages.
+```text
+middleware
+  → guard
+    → interceptor (before)
+      → pipe
+        → handler
+      ← interceptor (after)
+```
+
+The interceptor wraps the remaining execution: it runs code before calling
+`next()`, waits for the handler result, and then runs its after-handler logic.
+
+The exception filter is not merely the last sequential stage. The entire
+lifecycle is executed inside a top-level `try/catch`, so the filter can handle
+errors thrown by guards, interceptors, pipes, and handlers.
+
+- Middleware establishes request-wide infrastructure such as the request context.
+- Guard decides whether the request may continue.
+- Pipe validates or transforms handler arguments.
+- Handler executes the controller method.
+- Interceptor observes or transforms execution before and after the handler.
+- Exception filter maps errors to safe HTTP responses.
+
+## Request context with AsyncLocalStorage
+
+The request ID is stored in `AsyncLocalStorage` instead of a global variable.
+A global variable would be overwritten when concurrent requests interleave
+during asynchronous operations.
+
+The request-context middleware reads `X-Request-Id` from the incoming request
+or generates a new value. It then wraps the complete request lifecycle with
+`AsyncLocalStorage.run()`. Promises, timers, and nested asynchronous calls
+created within that execution inherit the same request store.
+
+Services can read the current request ID through `RequestContext` without
+receiving it as a method argument. Singleton services remain safe because they
+do not store request-specific state in instance fields: each asynchronous
+request chain has its own isolated store.
+
+## Request validation
+
+For an `@Body()` parameter, the Dispatcher builds an argument definition containing
+the raw value, parameter metadata, and runtime metatype.
+
+Immediately before the handler is called, `ZodValidationPipe` validates the body
+with a Zod 4 schema. Valid input is returned to the handler as the parsed value.
+Invalid input produces HTTP 400 containing all validation issues from
+`error.issues`.

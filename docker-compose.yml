@@ -1,6 +1,6 @@
 services:
   api:
-    image: mini-nest:part-2-http
+    image: mini-nest:part-3-lifecycle
     build:
       context: .
       target: test
